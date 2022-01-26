@@ -1468,6 +1468,63 @@ void dma_buf_vunmap(struct dma_buf *dmabuf, struct iosys_map *map)
 }
 EXPORT_SYMBOL_NS_GPL(dma_buf_vunmap, DMA_BUF);
 
+#ifdef CONFIG_CGROUP_GPU
+/**
+ * dma_buf_transfer_charge - Change the GPU cgroup to which the provided dma_buf is charged.
+ * @dmabuf:	[in]	buffer whose charge will be migrated to a different GPU cgroup
+ * @target:	[in]	the task_struct of the destination process for the GPU cgroup charge
+ *
+ * Only tasks that belong to the same cgroup the buffer is currently charged to
+ * may call this function, otherwise it will return -EPERM.
+ *
+ * Returns 0 on success, or a negative errno code otherwise.
+ */
+int dma_buf_transfer_charge(struct dma_buf *dmabuf, struct task_struct *target)
+{
+	struct gpucg *current_gpucg, *target_gpucg;
+	int ret = 0;
+
+	if (!dmabuf->gpucg || !dmabuf->gpucg_bucket) {
+		/* This dmabuf is not tracked under GPU cgroup accounting */
+		return 0;
+	}
+
+	current_gpucg = gpucg_get(current);
+	target_gpucg = gpucg_get(target);
+
+	/*
+	 * If the source and destination cgroups are the same, don't do anything. The current task's
+	 * cgroup must be the same as the one the buffer is charged to (checked below), so we can
+	 * perform this check without a lock by comparing with the current task's cgroup.
+	 */
+	if (current_gpucg == target_gpucg)
+		goto skip_transfer;
+
+	mutex_lock(&dmabuf->lock);
+	/*
+	 * Verify that the cgroup of the process requesting the transfer
+	 * is the same as the one the buffer is currently charged to.
+	 */
+	if (current_gpucg != dmabuf->gpucg) {
+		ret = -EPERM;
+		goto err;
+	}
+
+	ret = gpucg_transfer_charge(
+		dmabuf->gpucg, target_gpucg, dmabuf->gpucg_bucket, dmabuf->size);
+	if (ret)
+		goto err;
+	dmabuf->gpucg = target_gpucg;
+err:
+	mutex_unlock(&dmabuf->lock);
+skip_transfer:
+	gpucg_put(current_gpucg);
+	gpucg_put(target_gpucg);
+	return ret;
+}
+EXPORT_SYMBOL_NS_GPL(dma_buf_transfer_charge, DMA_BUF);
+#endif
+
 #ifdef CONFIG_DEBUG_FS
 static int dma_buf_debug_show(struct seq_file *s, void *unused)
 {

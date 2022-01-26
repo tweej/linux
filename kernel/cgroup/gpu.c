@@ -341,6 +341,58 @@ end:
 }
 EXPORT_SYMBOL_GPL(gpucg_uncharge);
 
+int gpucg_transfer_charge(struct gpucg *source,
+			  struct gpucg *dest,
+			  struct gpucg_bucket *bucket,
+			  u64 size)
+{
+	struct page_counter *counter;
+	u64 nr_pages;
+	struct gpucg_resource_pool *rp_source, *rp_dest;
+	int ret = 0;
+
+	nr_pages = PAGE_ALIGN(size) >> PAGE_SHIFT;
+
+	mutex_lock(&gpucg_mutex);
+	rp_source = cg_rpool_find_locked(source, bucket);
+	if (unlikely(!rp_source)) {
+		ret = -ENOENT;
+		goto exit_early;
+	}
+
+	rp_dest = cg_rpool_get_locked(dest, bucket);
+	if (IS_ERR(rp_dest)) {
+		ret = PTR_ERR(rp_dest);
+		goto exit_early;
+	}
+
+	/*
+	 * First uncharge from the pool it's currently charged to. This ordering avoids double
+	 * charging while the transfer is in progress, which could cause us to hit a limit.
+	 * If the try_charge fails for this transfer, we need to be able to reverse this uncharge,
+	 * so we continue to hold the gpucg_mutex here.
+	 */
+	page_counter_uncharge(&rp_source->total, nr_pages);
+	css_put(&source->css);
+
+	/* Now attempt the new charge */
+	if (page_counter_try_charge(&rp_dest->total, nr_pages, &counter)) {
+		css_get(&dest->css);
+		remove_empty_bucket_locked(source, bucket, rp_source);
+	} else {
+		/*
+		 * The new charge failed, so reverse the uncharge from above. This should always
+		 * succeed since charges on source are blocked by gpucg_mutex.
+		 */
+		WARN_ON(!page_counter_try_charge(&rp_source->total, nr_pages, &counter));
+		css_get(&source->css);
+		ret = -ENOMEM;
+	}
+exit_early:
+	mutex_unlock(&gpucg_mutex);
+	return ret;
+}
+
 struct gpucg_bucket *gpucg_register_bucket(const char *name, const char *suffix)
 {
 	struct gpucg_bucket *bucket, *b;

@@ -57,6 +57,20 @@ struct gpucg *gpucg_charge_current(struct gpucg_bucket *bucket, u64 size);
  */
 void gpucg_uncharge(struct gpucg *gpucg, struct gpucg_bucket *bucket, u64 size);
 
+/**
+ * gpucg_transfer_charge - Transfer a GPU charge from one cgroup to another
+ *
+ * @source: The GPU cgroup the charge will be transferred from.
+ * @dest: The GPU cgroup the charge will be transferred to.
+ * @bucket: The GPU cgroup bucket corresponding to the charge.
+ * @size: The size of the memory in bytes. This size will be rounded up to the nearest page size.
+ *
+ * Return: 0 on success, or a negative errno code otherwise.
+ */
+int gpucg_transfer_charge(struct gpucg *source,
+			  struct gpucg *dest,
+			  struct gpucg_bucket *bucket,
+			  u64 size);
 
 /**
  * gpucg_register_bucket - Registers a bucket for memory accounting using the GPU cgroup controller
@@ -90,6 +104,13 @@ static inline void gpucg_uncharge(struct gpucg *gpucg,
 				  struct gpucg_bucket *bucket,
 				  u64 size) {}
 
+static inline int gpucg_transfer_charge(struct gpucg *source,
+					struct gpucg *dest,
+					struct gpucg_bucket *bucket,
+					u64 size)
+{
+	return 0;
+}
 
 static inline struct gpucg_bucket *gpucg_register_bucket(const char *name, const char *suffix)
 {
