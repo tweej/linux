@@ -990,6 +990,13 @@ config BLK_CGROUP
 
 	See Documentation/admin-guide/cgroup-v1/blkio-controller.rst for more information.
 
+config CGROUP_GPU
+	bool "GPU controller (EXPERIMENTAL)"
+	select PAGE_COUNTER
+	help
+	  Provides accounting and limit setting for memory allocations by the GPU and
+	  GPU-related subsystems.
+
 config CGROUP_WRITEBACK
 	bool
 	depends on MEMCG && BLK_CGROUP
