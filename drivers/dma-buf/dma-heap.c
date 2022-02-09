@@ -7,10 +7,12 @@
  */
 
 #include <linux/cdev.h>
+#include <linux/cgroup_gpu.h>
 #include <linux/debugfs.h>
 #include <linux/device.h>
 #include <linux/dma-buf.h>
 #include <linux/err.h>
+#include <linux/kconfig.h>
 #include <linux/xarray.h>
 #include <linux/list.h>
 #include <linux/slab.h>
@@ -21,6 +23,7 @@
 #include <uapi/linux/dma-heap.h>
 
 #define DEVNAME "dma_heap"
+#define HEAP_NAME_SUFFIX "-heap"
 
 #define NUM_HEAP_MINORS 128
 
@@ -31,6 +34,7 @@
  * @heap_devt		heap device node
  * @list		list head connecting to list of heaps
  * @heap_cdev		heap char device
+ * @gpucg_bucket	gpu cgroup bucket for memory accounting
  *
  * Represents a heap of memory from which buffers can be made.
  */
@@ -41,6 +45,9 @@ struct dma_heap {
 	dev_t heap_devt;
 	struct list_head list;
 	struct cdev heap_cdev;
+#ifdef CONFIG_CGROUP_GPU
+	struct gpucg_bucket *gpucg_bucket;
+#endif
 };
 
 static LIST_HEAD(heap_list);
@@ -216,6 +223,34 @@ const char *dma_heap_get_name(struct dma_heap *heap)
 	return heap->name;
 }
 
+#ifdef CONFIG_CGROUP_GPU
+/**
+ * dma_heap_get_gpucg_bucket() - get struct gpucg_bucket pointer for the heap.
+ * @heap: DMA-Heap to get the gpucg_bucket struct for.
+ *
+ * Returns:
+ * The gpucg_bucket struct pointer for the heap. NULL if the GPU cgroup controller is not enabled.
+ */
+struct gpucg_bucket *dma_heap_get_gpucg_bucket(struct dma_heap *heap)
+{
+	return heap->gpucg_bucket;
+}
+#endif /* CONFIG_CGROUP_GPU */
+
+static int dma_heap_register_gpucg_bucket(struct dma_heap *heap,
+					  const struct dma_heap_export_info *exp_info)
+{
+	int ret = 0;
+#ifdef CONFIG_CGROUP_GPU
+	struct gpucg_bucket *bucket =
+		gpucg_register_bucket(exp_info->name, HEAP_NAME_SUFFIX);
+	if (IS_ERR(bucket))
+		return PTR_ERR(bucket);
+	heap->gpucg_bucket = bucket;
+#endif
+	return ret;
+}
+
 struct dma_heap *dma_heap_add(const struct dma_heap_export_info *exp_info)
 {
 	struct dma_heap *heap, *h, *err_ret;
@@ -226,6 +261,12 @@ struct dma_heap *dma_heap_add(const struct dma_heap_export_info *exp_info)
 	if (!exp_info->name || !strcmp(exp_info->name, "")) {
 		pr_err("dma_heap: Cannot add heap without a name\n");
 		return ERR_PTR(-EINVAL);
+	}
+
+	if (IS_ENABLED(CONFIG_CGROUP_GPU) && strlen(exp_info->name) + strlen(HEAP_NAME_SUFFIX) >=
+		GPUCG_BUCKET_NAME_MAX_LEN) {
+		pr_err("dma_heap: Name is too long for GPU cgroup\n");
+		return ERR_PTR(-ENAMETOOLONG);
 	}
 
 	if (!exp_info->ops || !exp_info->ops->allocate) {
@@ -252,6 +293,12 @@ struct dma_heap *dma_heap_add(const struct dma_heap_export_info *exp_info)
 	heap->name = exp_info->name;
 	heap->ops = exp_info->ops;
 	heap->priv = exp_info->priv;
+
+	ret = dma_heap_register_gpucg_bucket(heap, exp_info);
+	if (ret < 0) {
+		err_ret = ERR_PTR(ret);
+		goto err0;
+	}
 
 	/* Find unused minor number */
 	ret = xa_alloc(&dma_heap_minors, &minor, heap,

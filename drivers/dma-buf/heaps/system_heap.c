@@ -282,6 +282,15 @@ static void system_heap_vunmap(struct dma_buf *dmabuf, struct iosys_map *map)
 	iosys_map_clear(map);
 }
 
+static void system_heap_uncharge(struct dma_buf *dmabuf)
+{
+#ifdef CONFIG_CGROUP_GPU
+	if (dmabuf->gpucg && dmabuf->gpucg_bucket) {
+		gpucg_uncharge(dmabuf->gpucg, dmabuf->gpucg_bucket, dmabuf->size);
+	}
+#endif
+}
+
 static void system_heap_dma_buf_release(struct dma_buf *dmabuf)
 {
 	struct system_heap_buffer *buffer = dmabuf->priv;
@@ -297,6 +306,7 @@ static void system_heap_dma_buf_release(struct dma_buf *dmabuf)
 	}
 	sg_free_table(table);
 	kfree(buffer);
+	system_heap_uncharge(dmabuf);
 }
 
 static const struct dma_buf_ops system_heap_buf_ops = {
@@ -346,11 +356,20 @@ static struct dma_buf *system_heap_allocate(struct dma_heap *heap,
 	struct scatterlist *sg;
 	struct list_head pages;
 	struct page *page, *tmp_page;
-	int i, ret = -ENOMEM;
+	struct gpucg *gpucg;
+	struct gpucg_bucket *gpucg_bucket;
+	int i, ret;
+
+	gpucg_bucket = dma_heap_get_gpucg_bucket(heap);
+	gpucg = gpucg_charge_current(gpucg_bucket, len);
+	if (IS_ERR(gpucg))
+		return ERR_CAST(gpucg);
 
 	buffer = kzalloc(sizeof(*buffer), GFP_KERNEL);
-	if (!buffer)
-		return ERR_PTR(-ENOMEM);
+	if (!buffer) {
+		ret = -ENOMEM;
+		goto uncharge_gpucg;
+	}
 
 	INIT_LIST_HEAD(&buffer->attachments);
 	mutex_init(&buffer->lock);
@@ -396,6 +415,8 @@ static struct dma_buf *system_heap_allocate(struct dma_heap *heap,
 	exp_info.size = buffer->len;
 	exp_info.flags = fd_flags;
 	exp_info.priv = buffer;
+	dma_buf_exp_info_set_gpucg(&exp_info, gpucg, gpucg_bucket);
+
 	dmabuf = dma_buf_export(&exp_info);
 	if (IS_ERR(dmabuf)) {
 		ret = PTR_ERR(dmabuf);
@@ -414,7 +435,8 @@ free_buffer:
 	list_for_each_entry_safe(page, tmp_page, &pages, lru)
 		__free_pages(page, compound_order(page));
 	kfree(buffer);
-
+uncharge_gpucg:
+	gpucg_uncharge(gpucg, gpucg_bucket, len);
 	return ERR_PTR(ret);
 }
 

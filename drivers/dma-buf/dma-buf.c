@@ -577,6 +577,24 @@ err_alloc_file:
  * &dma_buf_ops.
  */
 
+#ifdef CONFIG_CGROUP_GPU
+static void dma_buf_set_gpucg(struct dma_buf *dmabuf, const struct dma_buf_export_info *exp)
+{
+	dmabuf->gpucg = exp->gpucg;
+	dmabuf->gpucg_bucket = exp->gpucg_bucket;
+}
+
+void dma_buf_exp_info_set_gpucg(struct dma_buf_export_info *exp_info,
+				struct gpucg *gpucg,
+				struct gpucg_bucket *gpucg_bucket)
+{
+	exp_info->gpucg = gpucg;
+	exp_info->gpucg_bucket = gpucg_bucket;
+}
+#else /* CONFIG_CGROUP_GPU */
+static void dma_buf_set_gpucg(struct dma_buf *dmabuf, const struct dma_buf_export_info *exp) {}
+#endif /* CONFIG_CGROUP_GPU */
+
 /**
  * dma_buf_export - Creates a new dma_buf, and associates an anon file
  * with this buffer, so it can be exported.
@@ -642,6 +660,7 @@ struct dma_buf *dma_buf_export(const struct dma_buf_export_info *exp_info)
 	init_waitqueue_head(&dmabuf->poll);
 	dmabuf->cb_in.poll = dmabuf->cb_out.poll = &dmabuf->poll;
 	dmabuf->cb_in.active = dmabuf->cb_out.active = 0;
+	dma_buf_set_gpucg(dmabuf, exp_info);
 
 	if (!resv) {
 		resv = (struct dma_resv *)&dmabuf[1];

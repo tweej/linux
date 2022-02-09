@@ -10,6 +10,7 @@
 #define _DMA_HEAPS_H
 
 #include <linux/cdev.h>
+#include <linux/cgroup_gpu.h>
 #include <linux/types.h>
 
 struct dma_heap;
@@ -58,6 +59,20 @@ void *dma_heap_get_drvdata(struct dma_heap *heap);
  * The char* for the heap name.
  */
 const char *dma_heap_get_name(struct dma_heap *heap);
+
+#ifdef CONFIG_CGROUP_GPU
+/**
+ * dma_heap_get_gpucg_bucket() - get a pointer to the struct gpucg_bucket for the heap.
+ * @heap: DMA-Heap to retrieve gpucg_bucket for
+ *
+ * Returns:
+ * The gpucg_bucket struct for the heap.
+ */
+struct gpucg_bucket *dma_heap_get_gpucg_bucket(struct dma_heap *heap);
+#else /* CONFIG_CGROUP_GPU */
+static inline struct gpucg_bucket *dma_heap_get_gpucg_bucket(struct dma_heap *heap)
+{ return NULL; }
+#endif /* CONFIG_CGROUP_GPU */
 
 /**
  * dma_heap_add - adds a heap to dmabuf heaps

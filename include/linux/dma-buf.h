@@ -13,6 +13,7 @@
 #ifndef __DMA_BUF_H__
 #define __DMA_BUF_H__
 
+#include <linux/cgroup_gpu.h>
 #include <linux/iosys-map.h>
 #include <linux/file.h>
 #include <linux/err.h>
@@ -303,7 +304,7 @@ struct dma_buf {
 	/**
 	 * @size:
 	 *
-	 * Size of the buffer; invariant over the lifetime of the buffer.
+	 * Size of the buffer in bytes; invariant over the lifetime of the buffer.
 	 */
 	size_t size;
 
@@ -455,6 +456,14 @@ struct dma_buf {
 		struct dma_buf *dmabuf;
 	} *sysfs_entry;
 #endif
+
+#ifdef CONFIG_CGROUP_GPU
+	/** @gpucg: Pointer to the GPU cgroup this buffer currently belongs to. */
+	struct gpucg *gpucg;
+
+	/* @gpucg_bucket: Pointer to the GPU cgroup bucket whence this buffer originates. */
+	struct gpucg_bucket *gpucg_bucket;
+#endif
 };
 
 /**
@@ -528,13 +537,15 @@ struct dma_buf_attachment {
 
 /**
  * struct dma_buf_export_info - holds information needed to export a dma_buf
- * @exp_name:	name of the exporter - useful for debugging.
- * @owner:	pointer to exporter module - used for refcounting kernel module
- * @ops:	Attach allocator-defined dma buf ops to the new buffer
- * @size:	Size of the buffer - invariant over the lifetime of the buffer
- * @flags:	mode flags for the file
- * @resv:	reservation-object, NULL to allocate default one
- * @priv:	Attach private data of allocator to this buffer
+ * @exp_name:		name of the exporter - useful for debugging.
+ * @owner:		pointer to exporter module - used for refcounting kernel module
+ * @ops:		Attach allocator-defined dma buf ops to the new buffer
+ * @size:		Size of the buffer in bytes - invariant over the lifetime of the buffer
+ * @flags:		mode flags for the file
+ * @resv:		reservation-object, NULL to allocate default one
+ * @priv:		Attach private data of allocator to this buffer
+ * @gpucg:		Pointer to GPU cgroup this buffer is charged to, or NULL if not charged
+ * @gpucg_bucket:	Pointer to GPU cgroup bucket this buffer comes from, or NULL if not charged
  *
  * This structure holds the information required to export the buffer. Used
  * with dma_buf_export() only.
@@ -547,6 +558,10 @@ struct dma_buf_export_info {
 	int flags;
 	struct dma_resv *resv;
 	void *priv;
+#ifdef CONFIG_CGROUP_GPU
+	struct gpucg *gpucg;
+	struct gpucg_bucket *gpucg_bucket;
+#endif
 };
 
 /**
@@ -632,4 +647,14 @@ int dma_buf_mmap(struct dma_buf *, struct vm_area_struct *,
 		 unsigned long);
 int dma_buf_vmap(struct dma_buf *dmabuf, struct iosys_map *map);
 void dma_buf_vunmap(struct dma_buf *dmabuf, struct iosys_map *map);
+
+#ifdef CONFIG_CGROUP_GPU
+void dma_buf_exp_info_set_gpucg(struct dma_buf_export_info *exp_info,
+				struct gpucg *gpucg,
+				struct gpucg_bucket *gpucg_bucket);
+#else/* CONFIG_CGROUP_GPU */
+static inline void dma_buf_exp_info_set_gpucg(struct dma_buf_export_info *exp_info,
+					      struct gpucg *gpucg,
+					      struct gpucg_bucket *gpucg_bucket) {}
+#endif /* CONFIG_CGROUP_GPU */
 #endif /* __DMA_BUF_H__ */
