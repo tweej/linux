@@ -432,6 +432,27 @@ struct gpucg_bucket *gpucg_register_bucket(const char *name, const char *suffix)
 }
 EXPORT_SYMBOL_GPL(gpucg_register_bucket);
 
+void gpucg_unregister_bucket(struct gpucg_bucket *bucket)
+{
+	struct gpucg_resource_pool *rpool, *tmp;
+	bool warned_once = false;
+
+	mutex_lock(&gpucg_mutex);
+	list_for_each_entry_safe(rpool, tmp, &bucket->rpools, bucket_node) {
+		if (!warned_once && page_counter_read(&rpool->total)) {
+			pr_warn("Unregistered bucket with non-zero charge: %s\n", bucket->name);
+			warned_once = true;
+		}
+		free_cg_rpool_locked(rpool);
+	}
+	list_del(&bucket->bucket_node);
+	mutex_unlock(&gpucg_mutex);
+
+	kfree_const(bucket->name);
+	kfree(bucket);
+}
+EXPORT_SYMBOL_GPL(gpucg_unregister_bucket);
+
 static int gpucg_resource_show(struct seq_file *sf, void *v)
 {
 	struct gpucg_resource_pool *rpool;

@@ -86,6 +86,16 @@ int gpucg_transfer_charge(struct gpucg *source,
  */
 struct gpucg_bucket *gpucg_register_bucket(const char *name, const char *suffix);
 
+/**
+ * gpucg_unregister_bucket - Unregisters a previously registered bucket.
+ *
+ * @bucket: The bucket to be unregistered.
+ *
+ * This bucket will be removed even if there are cgroups with non-zero charges to the provided
+ * bucket.
+ */
+void gpucg_unregister_bucket(struct gpucg_bucket *bucket);
+
 #else /* CONFIG_CGROUP_GPU */
 
 static inline struct gpucg *gpucg_get(struct task_struct *task)
@@ -116,5 +126,7 @@ static inline struct gpucg_bucket *gpucg_register_bucket(const char *name, const
 {
 	return NULL;
 }
+
+static inline void gpucg_unregister_bucket(struct gpucg_bucket *bucket) {}
 #endif /* CONFIG_CGROUP_GPU */
 #endif /* _CGROUP_GPU_H */
