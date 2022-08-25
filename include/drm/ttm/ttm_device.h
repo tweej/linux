@@ -280,6 +280,30 @@ struct ttm_device {
 	 * ttm_buffer_objects of any type/placement.
 	 */
 	struct gpucg_bucket *gpucg_bucket_ttm;
+
+	/**
+	 * @gpucg_bucket_ttm_system: The GPU cgroup controller bucket for accounting
+	 * ttm_buffer_object system memory allocated for this device.
+	 */
+	struct gpucg_bucket *gpucg_bucket_ttm_system;
+
+	/**
+	 * @gpucg_bucket_ttm_tt: The GPU cgroup controller bucket for accounting
+	 * ttm_buffer_object translation table memory allocated for this device.
+	 */
+	struct gpucg_bucket *gpucg_bucket_ttm_tt;
+
+	/**
+	 * @gpucg_bucket_ttm_vram: The GPU cgroup controller bucket for accounting
+	 * ttm_buffer_object vram allocated for this device.
+	 */
+	struct gpucg_bucket *gpucg_bucket_ttm_vram;
+
+	/**
+	 * @gpucg_bucket_ttm_priv: The GPU cgroup controller bucket for accounting
+	 * ttm_buffer_object private memory allocated for this device.
+	 */
+	struct gpucg_bucket *gpucg_bucket_ttm_priv;
 #endif /* CONFIG_CGROUP_GPU */
 };
 

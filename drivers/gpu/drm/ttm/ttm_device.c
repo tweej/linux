@@ -187,7 +187,7 @@ static void ttm_device_delayed_workqueue(struct work_struct *work)
 }
 
 #ifdef CONFIG_CGROUP_GPU
-static int ttm_device_register_gpucg_bucket(struct ttm_device *bdev, const char *devname)
+static int ttm_device_register_gpucg_buckets(struct ttm_device *bdev, const char *devname)
 {
 	struct gpucg_bucket *tmp;
 
@@ -196,13 +196,55 @@ static int ttm_device_register_gpucg_bucket(struct ttm_device *bdev, const char 
 		return PTR_ERR(tmp);
 	bdev->gpucg_bucket_ttm = tmp;
 
+	tmp = gpucg_register_bucket(devname, "-ttm-object-system");
+	if (IS_ERR(tmp))
+		goto unreg_ttm;
+	bdev->gpucg_bucket_ttm_system = tmp;
+
+	tmp = gpucg_register_bucket(devname, "-ttm-object-tt");
+	if (IS_ERR(tmp))
+		goto unreg_system;
+	bdev->gpucg_bucket_ttm_tt = tmp;
+
+	tmp = gpucg_register_bucket(devname, "-ttm-object-vram");
+	if (IS_ERR(tmp))
+		goto unreg_tt;
+	bdev->gpucg_bucket_ttm_vram = tmp;
+
+	tmp = gpucg_register_bucket(devname, "-ttm-object-priv");
+	if (IS_ERR(tmp))
+		goto unreg_vram;
+	bdev->gpucg_bucket_ttm_priv = tmp;
+
 	return 0;
+
+unreg_vram:
+	gpucg_unregister_bucket(bdev->gpucg_bucket_ttm_vram);
+unreg_tt:
+	gpucg_unregister_bucket(bdev->gpucg_bucket_ttm_tt);
+unreg_system:
+	gpucg_unregister_bucket(bdev->gpucg_bucket_ttm_system);
+unreg_ttm:
+	gpucg_unregister_bucket(bdev->gpucg_bucket_ttm);
+	return PTR_ERR(tmp);
+}
+
+static void ttm_device_unregister_gpucg_buckets(struct ttm_device *bdev)
+{
+	gpucg_unregister_bucket(bdev->gpucg_bucket_ttm);
+	gpucg_unregister_bucket(bdev->gpucg_bucket_ttm_system);
+	gpucg_unregister_bucket(bdev->gpucg_bucket_ttm_tt);
+	gpucg_unregister_bucket(bdev->gpucg_bucket_ttm_vram);
+	gpucg_unregister_bucket(bdev->gpucg_bucket_ttm_priv);
 }
 #else /* CONFIG_CGROUP_GPU */
-static inline int ttm_device_register_gpucg_bucket(struct ttm_device *bdev, const char *devname)
+static inline int ttm_device_register_gpucg_buckets(struct ttm_device *bdev, const char *devname)
 {
 	return 0;
 }
+
+static void ttm_device_unregister_gpucg_buckets(struct ttm_device *bdev)
+{}
 #endif /* CONFIG_CGROUP_GPU */
 
 /**
@@ -235,7 +277,7 @@ int ttm_device_init(struct ttm_device *bdev, struct ttm_device_funcs *funcs,
 	if (ret)
 		return ret;
 
-	ret = ttm_device_register_gpucg_bucket(bdev, dev_name(dev));
+	ret = ttm_device_register_gpucg_buckets(bdev, dev_name(dev));
 	if (ret)
 		return ret;
 
@@ -284,7 +326,7 @@ void ttm_device_fini(struct ttm_device *bdev)
 
 	ttm_pool_fini(&bdev->pool);
 	ttm_global_release();
-	gpucg_unregister_bucket(ttm_bucket(bdev));
+	ttm_device_unregister_gpucg_buckets(bdev);
 }
 EXPORT_SYMBOL(ttm_device_fini);
 

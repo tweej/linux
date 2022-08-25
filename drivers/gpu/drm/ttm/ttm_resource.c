@@ -22,6 +22,7 @@
  * Authors: Christian König
  */
 
+#include <linux/cgroup_gpu.h>
 #include <linux/iosys-map.h>
 #include <linux/io-mapping.h>
 #include <linux/scatterlist.h>
@@ -219,6 +220,30 @@ void ttm_resource_fini(struct ttm_resource_manager *man,
 }
 EXPORT_SYMBOL(ttm_resource_fini);
 
+#ifdef CONFIG_CGROUP_GPU
+static struct gpucg_bucket *ttm_bucket_placement(const struct ttm_device *dev, uint32_t placement)
+{
+	switch (placement) {
+	case TTM_PL_SYSTEM:
+		return dev->gpucg_bucket_ttm_system;
+	case TTM_PL_TT:
+		return dev->gpucg_bucket_ttm_tt;
+	case TTM_PL_VRAM:
+		return dev->gpucg_bucket_ttm_vram;
+	case TTM_PL_PRIV:
+		return dev->gpucg_bucket_ttm_priv;
+	default:
+		return NULL;
+	};
+}
+#else /* CONFIG_CGROUP_GPU */
+static inline struct gpucg_bucket *ttm_bucket_placement(const struct ttm_device *dev,
+							uint32_t placement)
+{
+	return NULL;
+}
+#endif /* CONFIG_CGROUP_GPU */
+
 int ttm_resource_alloc(struct ttm_buffer_object *bo,
 		       const struct ttm_place *place,
 		       struct ttm_resource **res_ptr)
@@ -226,6 +251,15 @@ int ttm_resource_alloc(struct ttm_buffer_object *bo,
 	struct ttm_resource_manager *man =
 		ttm_manager_type(bo->bdev, place->mem_type);
 	int ret;
+	struct gpucg_bucket *bucket;
+
+	bucket = ttm_bucket_placement(bo->bdev, place->mem_type);
+	if (bucket) {
+		struct gpucg *gpucg = gpucg_charge_current(bucket, bo->base.size);
+		if (IS_ERR(gpucg))
+			return -ENOSPC;
+		ttm_bo_set_gpucg(bo, gpucg);
+	}
 
 	ret = man->func->alloc(man, bo, place, res_ptr);
 	if (ret)
@@ -240,9 +274,14 @@ int ttm_resource_alloc(struct ttm_buffer_object *bo,
 void ttm_resource_free(struct ttm_buffer_object *bo, struct ttm_resource **res)
 {
 	struct ttm_resource_manager *man;
+	struct gpucg_bucket *bucket;
 
 	if (!*res)
 		return;
+
+	bucket = ttm_bucket_placement(bo->bdev, (*res)->mem_type);
+	if (bucket)
+		gpucg_uncharge(ttm_bo_get_gpucg(bo), bucket, bo->base.size);
 
 	spin_lock(&bo->bdev->lru_lock);
 	ttm_resource_del_bulk_move(*res, bo);
