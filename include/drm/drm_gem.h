@@ -41,6 +41,7 @@
 
 struct iosys_map;
 struct drm_gem_object;
+struct gpucg;
 
 /**
  * struct drm_gem_object_funcs - GEM object functions
@@ -312,6 +313,15 @@ struct drm_gem_object {
 	 *
 	 */
 	const struct drm_gem_object_funcs *funcs;
+
+#ifdef CONFIG_CGROUP_GPU
+	/**
+	 * @gpucg:
+	 *
+	 * The GPU cgroup to which this object is charged for memory accounting.
+	 */
+	struct gpucg *gpucg;
+#endif
 };
 
 /**
@@ -419,5 +429,25 @@ void drm_gem_unlock_reservations(struct drm_gem_object **objs, int count,
 				 struct ww_acquire_ctx *acquire_ctx);
 int drm_gem_dumb_map_offset(struct drm_file *file, struct drm_device *dev,
 			    u32 handle, u64 *offset);
+
+#ifdef CONFIG_CGROUP_GPU
+static inline struct gpucg *drm_gem_object_get_gpucg(struct drm_gem_object *obj)
+{
+	return obj->gpucg;
+}
+
+static inline void drm_gem_object_set_gpucg(struct drm_gem_object *obj, struct gpucg *gpucg)
+{
+	obj->gpucg = gpucg;
+}
+#else /* CONFIG_CGROUP_GPU */
+static inline struct gpucg *drm_gem_object_get_gpucg(struct drm_gem_object *obj)
+{
+	return NULL;
+}
+
+static inline void drm_gem_object_set_gpucg(struct drm_gem_object *obj, struct gpucg *gpucg)
+{}
+#endif /* CONFIG_CGROUP_GPU */
 
 #endif /* __DRM_GEM_H__ */

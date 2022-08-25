@@ -17,6 +17,7 @@ struct drm_vma_offset_manager;
 struct drm_vram_mm;
 struct drm_fb_helper;
 
+struct gpucg_bucket;
 struct inode;
 
 struct pci_dev;
@@ -295,6 +296,16 @@ struct drm_device {
 	 */
 	struct drm_fb_helper *fb_helper;
 
+#ifdef CONFIG_CGROUP_GPU
+	/**
+	 * @gpucg_bucket:
+	 *
+	 * The GPU cgroup controller bucket for accounting drm_gem_object memory
+	 * allocated for this device.
+	 */
+	struct gpucg_bucket *gpucg_bucket;
+#endif
+
 	/* Everything below here is for legacy driver, never use! */
 	/* private: */
 #if IS_ENABLED(CONFIG_DRM_LEGACY)
@@ -361,5 +372,17 @@ struct drm_device {
 	int irq;
 #endif
 };
+
+#ifdef CONFIG_CGROUP_GPU
+static inline struct gpucg_bucket *drm_device_get_gpucg_bucket(const struct drm_device *dev)
+{
+	return dev->gpucg_bucket;
+}
+#else /* CONFIG_CGROUP_GPU */
+static inline struct gpucg_bucket *drm_device_get_gpucg_bucket(const struct drm_device *dev)
+{
+	return NULL;
+}
+#endif /* CONFIG_CGROUP_GPU */
 
 #endif

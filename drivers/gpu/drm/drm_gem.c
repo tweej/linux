@@ -25,6 +25,7 @@
  *
  */
 
+#include <linux/cgroup_gpu.h>
 #include <linux/dma-buf.h>
 #include <linux/file.h>
 #include <linux/fs.h>
@@ -543,6 +544,7 @@ struct page **drm_gem_get_pages(struct drm_gem_object *obj)
 	struct address_space *mapping;
 	struct page *p, **pages;
 	struct pagevec pvec;
+	struct gpucg *gpucg;
 	int i, npages;
 
 
@@ -563,6 +565,13 @@ struct page **drm_gem_get_pages(struct drm_gem_object *obj)
 	pages = kvmalloc_array(npages, sizeof(struct page *), GFP_KERNEL);
 	if (pages == NULL)
 		return ERR_PTR(-ENOMEM);
+
+	gpucg = gpucg_charge_current(drm_device_get_gpucg_bucket(obj->dev), npages*PAGE_SIZE);
+	if (IS_ERR(gpucg)) {
+		p = ERR_CAST(gpucg);
+		goto fail_charge;
+	}
+	drm_gem_object_set_gpucg(obj, gpucg);
 
 	mapping_set_unevictable(mapping);
 
@@ -593,6 +602,10 @@ fail:
 	if (pagevec_count(&pvec))
 		drm_gem_check_release_pagevec(&pvec);
 
+	gpucg_uncharge(drm_gem_object_get_gpucg(obj),
+		       drm_device_get_gpucg_bucket(obj->dev),
+		       npages*PAGE_SIZE);
+fail_charge:
 	kvfree(pages);
 	return ERR_CAST(p);
 }
@@ -642,6 +655,10 @@ void drm_gem_put_pages(struct drm_gem_object *obj, struct page **pages,
 		drm_gem_check_release_pagevec(&pvec);
 
 	kvfree(pages);
+
+	gpucg_uncharge(drm_gem_object_get_gpucg(obj),
+		       drm_device_get_gpucg_bucket(obj->dev),
+		       npages*PAGE_SIZE);
 }
 EXPORT_SYMBOL(drm_gem_put_pages);
 

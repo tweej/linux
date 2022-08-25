@@ -5,6 +5,7 @@
  */
 
 #include <drm/drm_cache.h>
+#include <linux/cgroup_gpu.h>
 
 #include "gt/intel_gt.h"
 #include "gt/intel_gt_pm.h"
@@ -97,6 +98,7 @@ void __i915_gem_object_set_pages(struct drm_i915_gem_object *obj,
 
 int ____i915_gem_object_get_pages(struct drm_i915_gem_object *obj)
 {
+	struct gpucg *gpucg;
 	struct drm_i915_private *i915 = to_i915(obj->base.dev);
 	int err;
 
@@ -107,6 +109,12 @@ int ____i915_gem_object_get_pages(struct drm_i915_gem_object *obj)
 			"Attempting to obtain a purgeable object\n");
 		return -EFAULT;
 	}
+
+	gpucg = gpucg_charge_current(drm_device_get_gpucg_bucket(obj->base.dev),
+				     obj->base.size);
+	if (IS_ERR(gpucg))
+		return PTR_ERR(gpucg);
+	drm_gem_object_set_gpucg(&obj->base, gpucg);
 
 	err = obj->ops->get_pages(obj);
 	GEM_BUG_ON(!err && !i915_gem_object_has_pages(obj));
@@ -260,6 +268,10 @@ int __i915_gem_object_put_pages(struct drm_i915_gem_object *obj)
 	 */
 	if (!IS_ERR_OR_NULL(pages))
 		obj->ops->put_pages(obj, pages);
+
+	gpucg_uncharge(drm_gem_object_get_gpucg(&obj->base),
+		       drm_device_get_gpucg_bucket(obj->base.dev),
+		       obj->base.size);
 
 	return 0;
 }

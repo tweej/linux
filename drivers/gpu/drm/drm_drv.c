@@ -26,6 +26,7 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+#include <linux/cgroup_gpu.h>
 #include <linux/debugfs.h>
 #include <linux/fs.h>
 #include <linux/module.h>
@@ -536,6 +537,23 @@ static void drm_fs_inode_free(struct inode *inode)
 	}
 }
 
+#ifdef CONFIG_CGROUP_GPU
+static int drm_dev_register_gpucg_bucket(struct drm_device *dev)
+{
+	struct gpucg_bucket *bucket =
+		gpucg_register_bucket(dev->unique, "-gem-object");
+	if (IS_ERR(bucket))
+		return PTR_ERR(bucket);
+	dev->gpucg_bucket = bucket;
+	return 0;
+}
+#else /* CONFIG_CGROUP_GPU */
+static inline int drm_dev_register_gpucg_bucket(struct drm_device *dev)
+{
+	return 0;
+}
+#endif /* CONFIG_CGROUP_GPU */
+
 /**
  * DOC: component helper usage recommendations
  *
@@ -563,6 +581,7 @@ static void drm_fs_inode_free(struct inode *inode)
 
 static void drm_dev_init_release(struct drm_device *dev, void *res)
 {
+	gpucg_unregister_bucket(drm_device_get_gpucg_bucket(dev));
 	drm_legacy_ctxbitmap_cleanup(dev);
 	drm_legacy_remove_map_hash(dev);
 	drm_fs_inode_free(dev->anon_inode);
@@ -653,6 +672,10 @@ static int drm_dev_init(struct drm_device *dev,
 	}
 
 	ret = drm_dev_set_unique(dev, dev_name(parent));
+	if (ret)
+		goto err;
+
+	ret = drm_dev_register_gpucg_bucket(dev);
 	if (ret)
 		goto err;
 
