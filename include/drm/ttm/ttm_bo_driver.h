@@ -268,8 +268,8 @@ int ttm_bo_pipeline_gutting(struct ttm_buffer_object *bo);
 /**
  * ttm_io_prot
  *
- * bo: ttm buffer object
- * res: ttm resource object
+ * @bo: ttm buffer object
+ * @res: ttm resource object
  * @tmp: Page protection flag for a normal, cached mapping.
  *
  * Utility function that returns the pgprot_t that should be used for

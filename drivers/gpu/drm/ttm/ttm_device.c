@@ -27,6 +27,7 @@
 
 #define pr_fmt(fmt) "[TTM DEVICE] " fmt
 
+#include <linux/cgroup_gpu.h>
 #include <linux/mm.h>
 
 #include <drm/ttm/ttm_device.h>
@@ -185,6 +186,25 @@ static void ttm_device_delayed_workqueue(struct work_struct *work)
 				      ((HZ / 100) < 1) ? 1 : HZ / 100);
 }
 
+#ifdef CONFIG_CGROUP_GPU
+static int ttm_device_register_gpucg_bucket(struct ttm_device *bdev, const char *devname)
+{
+	struct gpucg_bucket *tmp;
+
+	tmp = gpucg_register_bucket(devname, "-ttm-object");
+	if (IS_ERR(tmp))
+		return PTR_ERR(tmp);
+	bdev->gpucg_bucket_ttm = tmp;
+
+	return 0;
+}
+#else /* CONFIG_CGROUP_GPU */
+static inline int ttm_device_register_gpucg_bucket(struct ttm_device *bdev, const char *devname)
+{
+	return 0;
+}
+#endif /* CONFIG_CGROUP_GPU */
+
 /**
  * ttm_device_init
  *
@@ -212,6 +232,10 @@ int ttm_device_init(struct ttm_device *bdev, struct ttm_device_funcs *funcs,
 		return -EINVAL;
 
 	ret = ttm_global_init();
+	if (ret)
+		return ret;
+
+	ret = ttm_device_register_gpucg_bucket(bdev, dev_name(dev));
 	if (ret)
 		return ret;
 
@@ -260,6 +284,7 @@ void ttm_device_fini(struct ttm_device *bdev)
 
 	ttm_pool_fini(&bdev->pool);
 	ttm_global_release();
+	gpucg_unregister_bucket(ttm_bucket(bdev));
 }
 EXPORT_SYMBOL(ttm_device_fini);
 

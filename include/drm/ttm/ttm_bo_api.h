@@ -55,6 +55,8 @@ struct ttm_placement;
 
 struct ttm_place;
 
+struct gpucg;
+
 /**
  * enum ttm_bo_type
  *
@@ -121,6 +123,9 @@ struct ttm_buffer_object {
 	enum ttm_bo_type type;
 	uint32_t page_alignment;
 	void (*destroy) (struct ttm_buffer_object *);
+#ifdef CONFIG_CGROUP_GPU
+	struct gpucg *gpucg;
+#endif
 
 	/**
 	* Members not needing protection.
@@ -544,5 +549,25 @@ int ttm_bo_vm_access(struct vm_area_struct *vma, unsigned long addr,
 bool ttm_bo_delayed_delete(struct ttm_device *bdev, bool remove_all);
 
 vm_fault_t ttm_bo_vm_dummy_page(struct vm_fault *vmf, pgprot_t prot);
+
+#ifdef CONFIG_CGROUP_GPU
+static inline struct gpucg *ttm_bo_get_gpucg(struct ttm_buffer_object *bo)
+{
+	return bo->gpucg;
+}
+
+static inline void ttm_bo_set_gpucg(struct ttm_buffer_object *bo, struct gpucg *gpucg)
+{
+	bo->gpucg = gpucg;
+}
+#else
+static inline struct gpucg *ttm_bo_get_gpucg(struct ttm_buffer_object *bo)
+{
+	return NULL;
+}
+
+static inline void ttm_bo_set_gpucg(struct ttm_buffer_object *bo, struct gpucg *gpucg)
+{}
+#endif
 
 #endif

@@ -30,6 +30,7 @@
 #include <drm/ttm/ttm_resource.h>
 #include <drm/ttm/ttm_pool.h>
 
+struct gpucg_bucket;
 struct ttm_device;
 struct ttm_placement;
 struct ttm_buffer_object;
@@ -271,6 +272,15 @@ struct ttm_device {
 	 * @wq: Work queue structure for the delayed delete workqueue.
 	 */
 	struct delayed_work wq;
+
+#ifdef CONFIG_CGROUP_GPU
+	/**
+	 * @gpucg_bucket_ttm: The GPU cgroup controller bucket for accounting
+	 * ttm_buffer_object memory allocated for this device. This covers all
+	 * ttm_buffer_objects of any type/placement.
+	 */
+	struct gpucg_bucket *gpucg_bucket_ttm;
+#endif /* CONFIG_CGROUP_GPU */
 };
 
 int ttm_global_swapout(struct ttm_operation_ctx *ctx, gfp_t gfp_flags);
@@ -298,5 +308,17 @@ int ttm_device_init(struct ttm_device *bdev, struct ttm_device_funcs *funcs,
 		    bool use_dma_alloc, bool use_dma32);
 void ttm_device_fini(struct ttm_device *bdev);
 void ttm_device_clear_dma_mappings(struct ttm_device *bdev);
+
+#ifdef CONFIG_CGROUP_GPU
+static inline struct gpucg_bucket *ttm_bucket(const struct ttm_device *dev)
+{
+	return dev->gpucg_bucket_ttm;
+}
+#else /* CONFIG_CGROUP_GPU */
+static inline struct gpucg_bucket *ttm_bucket(const struct ttm_device *dev)
+{
+	return NULL;
+}
+#endif /* CONFIG_CGROUP_GPU */
 
 #endif

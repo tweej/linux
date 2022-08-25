@@ -41,6 +41,7 @@
 #include <linux/module.h>
 #include <linux/atomic.h>
 #include <linux/dma-resv.h>
+#include <linux/cgroup_gpu.h>
 
 #include "ttm_module.h"
 
@@ -410,6 +411,8 @@ static void ttm_bo_release(struct kref *kref)
 
 	ttm_bo_cleanup_memtype_use(bo);
 	dma_resv_unlock(bo->base.resv);
+
+	gpucg_uncharge(ttm_bo_get_gpucg(bo), ttm_bucket(bdev), bo->base.size);
 
 	atomic_dec(&ttm_glob.bo_count);
 	bo->destroy(bo);
@@ -934,6 +937,7 @@ int ttm_bo_init_reserved(struct ttm_device *bdev,
 {
 	static const struct ttm_place sys_mem = { .mem_type = TTM_PL_SYSTEM };
 	bool locked;
+	struct gpucg *gpucg;
 	int ret;
 
 	bo->destroy = destroy;
@@ -952,6 +956,13 @@ int ttm_bo_init_reserved(struct ttm_device *bdev,
 		bo->base.resv = &bo->base._resv;
 	}
 	atomic_inc(&ttm_glob.bo_count);
+
+	gpucg = gpucg_charge_current(ttm_bucket(bdev), size);
+	if (IS_ERR(gpucg)) {
+		ttm_bo_put(bo);
+		return PTR_ERR(gpucg);
+	}
+	ttm_bo_set_gpucg(bo, gpucg);
 
 	ret = ttm_resource_alloc(bo, &sys_mem, &bo->resource);
 	if (unlikely(ret)) {
@@ -1106,7 +1117,7 @@ int ttm_bo_swapout(struct ttm_buffer_object *bo, struct ttm_operation_ctx *ctx,
 
 		ret = ttm_bo_handle_move_mem(bo, evict_mem, true, &ctx, &hop);
 		if (unlikely(ret != 0)) {
-			WARN(ret == -EMULTIHOP, "Unexpected multihop in swaput - likely driver bug.\n");
+			WARN(ret == -EMULTIHOP, "Unexpected multihop in swapout - likely driver bug.\n");
 			goto out;
 		}
 	}
